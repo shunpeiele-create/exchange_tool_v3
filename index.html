@@ -77,12 +77,16 @@
 
         /* 通貨カード */
         .currency-scroll {
-            flex: 1;
+            position: fixed;
+            top: 44px;
+            bottom: 260px;
+            left: 0;
+            right: 0;
             overflow-y: auto;
             padding: 16px;
-            padding-top: 60px;
-            padding-bottom: 16px;
             -webkit-overflow-scrolling: touch;
+            max-width: 428px;
+            margin: 0 auto;
         }
 
         .currency-grid {
@@ -101,11 +105,22 @@
             transition: all 0.2s;
             border: 3px solid transparent;
             position: relative;
+            touch-action: none;
         }
 
         .currency-card.selected {
             border-color: #007AFF;
             box-shadow: 0 4px 12px rgba(0,122,255,0.3);
+        }
+
+        .currency-card.dragging {
+            opacity: 0.5;
+            transform: scale(1.05);
+            z-index: 1000;
+        }
+
+        .currency-card.drag-over {
+            border-color: #34C759;
         }
 
         .delete-btn {
@@ -551,6 +566,10 @@
         let editingCurrencyId = null;
         let lastTapTime = 0;
         let lastTapId = null;
+        let draggedElement = null;
+        let draggedId = null;
+        let longPressTimer = null;
+        let isDragging = false;
 
         function switchTab(tab) {
             document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
@@ -570,21 +589,32 @@
             currencies.forEach(currency => {
                 const card = document.createElement('div');
                 card.className = `currency-card ${currency.id === selectedCurrency ? 'selected' : ''}`;
+                card.setAttribute('data-id', currency.id);
                 card.onclick = (e) => handleCardClick(currency.id, e);
+                
+                // 長押しとドラッグのイベント
+                card.addEventListener('touchstart', handleTouchStart);
+                card.addEventListener('touchmove', handleTouchMove);
+                card.addEventListener('touchend', handleTouchEnd);
                 
                 const value = convertValue(parseFloat(currentValue) || 0, selectedCurrency, currency.id);
                 const formattedValue = formatNumber(value);
                 const valueClass = getValueClass(formattedValue);
                 
                 let rateText = '';
-                if (currency.rateFromJPY) {
-                    rateText = `1 JPY = ${formatNumber(currency.rateFromJPY)} ${currency.code}`;
+                if (currency.rateFromJPY && currency.id !== 1) {
+                    const toJPY = (1 / currency.rateFromJPY).toFixed(2);
+                    rateText = `1円=${formatNumber(currency.rateFromJPY)} ${currency.code}<br>1${currency.code}=${toJPY}円`;
+                } else if (currency.id === 1) {
+                    rateText = '基準通貨';
                 }
                 
                 card.innerHTML = `
                     ${currency.id !== 1 ? '<button class="delete-btn" onclick="deleteCurrency(' + currency.id + ', event)">−</button>' : ''}
-                    <div class="currency-name">${currency.name}</div>
-                    <div class="currency-code">${currency.code}</div>
+                    <div class="currency-header">
+                        <div class="currency-name">${currency.name}</div>
+                        <div class="currency-code">${currency.code}</div>
+                    </div>
                     <div class="currency-value ${valueClass}">${formattedValue}</div>
                     <div class="currency-rate">${rateText}</div>
                 `;
@@ -598,6 +628,77 @@
             addCard.onclick = addCurrency;
             addCard.innerHTML = '<div class="add-btn">+</div>';
             grid.appendChild(addCard);
+        }
+
+        function handleTouchStart(e) {
+            if (e.target.classList.contains('delete-btn')) return;
+            
+            const card = e.currentTarget;
+            const id = parseInt(card.getAttribute('data-id'));
+            
+            longPressTimer = setTimeout(() => {
+                isDragging = true;
+                draggedElement = card;
+                draggedId = id;
+                card.classList.add('dragging');
+                navigator.vibrate && navigator.vibrate(50); // 振動フィードバック
+            }, 500); // 500ms長押しでドラッグ開始
+        }
+
+        function handleTouchMove(e) {
+            if (!isDragging) {
+                clearTimeout(longPressTimer);
+                return;
+            }
+            
+            e.preventDefault();
+            
+            const touch = e.touches[0];
+            const elementAtPoint = document.elementFromPoint(touch.clientX, touch.clientY);
+            
+            // ドラッグ先のカードを検出
+            const targetCard = elementAtPoint?.closest('.currency-card');
+            
+            // すべてのカードからdrag-overクラスを削除
+            document.querySelectorAll('.currency-card').forEach(c => c.classList.remove('drag-over'));
+            
+            if (targetCard && targetCard !== draggedElement && !targetCard.classList.contains('add-card')) {
+                targetCard.classList.add('drag-over');
+            }
+        }
+
+        function handleTouchEnd(e) {
+            clearTimeout(longPressTimer);
+            
+            if (!isDragging) return;
+            
+            const touch = e.changedTouches[0];
+            const elementAtPoint = document.elementFromPoint(touch.clientX, touch.clientY);
+            const targetCard = elementAtPoint?.closest('.currency-card');
+            
+            if (targetCard && targetCard !== draggedElement) {
+                const targetId = parseInt(targetCard.getAttribute('data-id'));
+                
+                if (targetId) {
+                    // 配列内の位置を入れ替え
+                    const draggedIndex = currencies.findIndex(c => c.id === draggedId);
+                    const targetIndex = currencies.findIndex(c => c.id === targetId);
+                    
+                    const [removed] = currencies.splice(draggedIndex, 1);
+                    currencies.splice(targetIndex, 0, removed);
+                    
+                    renderCurrencies();
+                }
+            }
+            
+            // クリーンアップ
+            document.querySelectorAll('.currency-card').forEach(c => {
+                c.classList.remove('dragging', 'drag-over');
+            });
+            
+            isDragging = false;
+            draggedElement = null;
+            draggedId = null;
         }
 
         function handleCardClick(id, event) {
