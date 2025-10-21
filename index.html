@@ -61,7 +61,14 @@
             color: #000;
         }
 
-        .settings-btn {
+        /* --- 変更: ヘッダーボタン共通スタイル --- */
+        .header-btn-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .header-btn {
             background: transparent;
             color: #007AFF;
             border: none;
@@ -71,9 +78,10 @@
             line-height: 1;
         }
 
-        .settings-btn:active {
+        .header-btn:active {
             opacity: 0.6;
         }
+        /* ---------------------------------- */
 
         /* 通貨カード */
         .currency-scroll {
@@ -99,14 +107,12 @@
         .currency-card {
             background: white;
             border-radius: 12px;
-            /* タイルをコンパクトにするためパディングを調整 */
             padding: 12px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.08);
             cursor: pointer;
             transition: all 0.2s;
             border: 3px solid transparent;
             position: relative;
-            /* touch-action: none; を削除 (スクロール改善のため) */
         }
 
         .currency-card.selected {
@@ -156,7 +162,6 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            /* 他のタイルと高さを合わせるため最小高さを調整 */
             min-height: 100px;
         }
 
@@ -165,7 +170,6 @@
             color: #007AFF;
         }
 
-        /* 国名と通貨コードを横並びにするためのヘッダー */
         .currency-header {
             display: flex;
             align-items: baseline;
@@ -174,23 +178,21 @@
         }
 
         .currency-name {
-            font-size: 15px; /* 少し大きく */
+            font-size: 15px; 
             font-weight: 500;
             color: #333;
-            /* margin-bottom: 4px; (ヘッダーに移動) */
         }
 
         .currency-code {
             font-size: 12px;
             color: #888;
-            /* margin-bottom: 8px; (ヘッダーに移動) */
         }
 
         .currency-value {
-            font-size: 22px; /* 少し調整 */
+            font-size: 22px;
             font-weight: 600;
             color: #000;
-            margin-bottom: 6px; /* 調整 */
+            margin-bottom: 6px;
             word-break: break-all;
         }
 
@@ -206,8 +208,36 @@
             font-size: 11px;
             color: #999;
         }
+        
+        /* --- 追加: 並べ替えモード用スタイル --- */
+        .drag-handle {
+            position: absolute;
+            top: 50%;
+            left: 6px; /* 左端に配置 */
+            transform: translateY(-50%);
+            font-size: 20px;
+            color: #ccc;
+            cursor: grab;
+            padding: 8px 4px;
+            display: none; /* 通常時は非表示 */
+            z-index: 5;
+        }
 
-        /* 電卓 */
+        .sort-mode .drag-handle {
+            display: block; /* 並べ替えモードで表示 */
+        }
+        
+        .sort-mode .currency-card {
+            padding-left: 32px; /* ハンドル分スペースを空ける */
+            cursor: grab;
+        }
+        
+        .sort-mode .currency-card.dragging {
+            cursor: grabbing;
+        }
+        /* --------------------------------- */
+
+        /* 電卓 (変更なし) */
         .calculator {
             background: white;
             border-top: 1px solid #ddd;
@@ -434,8 +464,6 @@
             color: white;
         }
         
-        /* (タブバーは未使用のため省略) */
-
         .back-btn {
             background: transparent;
             border: none;
@@ -449,9 +477,12 @@
 <body>
     <div class="container">
         <div class="screen active" id="calc-screen">
-            <div class="header">
+            <div class="header" id="calc-header">
                 <div class="header-title">外貨両替ツール</div>
-                <button class="settings-btn" onclick="switchTab('settings')">⚙️</button>
+                <div class="header-btn-group">
+                    <button class="header-btn" id="sort-btn" onclick="toggleSortMode()">↕️</button>
+                    <button class="header-btn settings-btn" id="settings-btn" onclick="switchTab('settings')">⚙️</button>
+                </div>
             </div>
             <div class="currency-scroll">
                 <div class="currency-grid" id="currency-grid"></div>
@@ -526,13 +557,11 @@
     </div>
 
     <script>
-        // --- 改善1: 永続化のためのキー ---
         const STORAGE_KEY = 'currencyConverterData';
 
         let currencies = [];
         let nextId = 1;
 
-        // デフォルトデータ
         const defaultCurrencies = [
             { id: 1, name: "日本", code: "JPY", rateFromJPY: 1 },
             { id: 2, name: "中国", code: "CNY", rateFromJPY: 1/21.33 },
@@ -550,11 +579,12 @@
         let lastTapId = null;
         let draggedElement = null;
         let draggedId = null;
-        let longPressTimer = null;
+        // --- 削除: longPressTimer, startY ---
         let isDragging = false;
-        let startY = 0; // スクロール判定用
+        
+        // --- 追加: 並べ替えモード管理 ---
+        let isSortMode = false;
 
-        // --- 改善1: データの保存 ---
         function saveData() {
             const data = {
                 currencies: currencies,
@@ -563,7 +593,6 @@
             localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
         }
 
-        // --- 改善1: データの読み込み ---
         function loadData() {
             const data = localStorage.getItem(STORAGE_KEY);
             if (data) {
@@ -571,11 +600,40 @@
                 currencies = parsedData.currencies;
                 nextId = parsedData.nextId;
             } else {
-                // データがない場合はデフォルトをセット
                 currencies = defaultCurrencies;
                 nextId = 6;
-                saveData(); // デフォルトを保存
+                saveData(); 
             }
+        }
+
+        // --- 追加: 並べ替えモード切り替え ---
+        function toggleSortMode() {
+            isSortMode = !isSortMode;
+            
+            const sortBtn = document.getElementById('sort-btn');
+            const headerTitle = document.querySelector('#calc-header .header-title');
+            const settingsBtn = document.getElementById('settings-btn');
+            const grid = document.getElementById('currency-grid');
+            
+            if (isSortMode) {
+                // 並べ替えモード開始
+                sortBtn.textContent = '完了';
+                sortBtn.style.fontSize = '16px';
+                sortBtn.style.fontWeight = '600';
+                headerTitle.textContent = '並び替え';
+                settingsBtn.style.display = 'none'; // 設定ボタン非表示
+                grid.classList.add('sort-mode');
+            } else {
+                // 並べ替えモード終了
+                sortBtn.textContent = '↕️';
+                sortBtn.style.fontSize = '24px';
+                sortBtn.style.fontWeight = 'normal';
+                headerTitle.textContent = '外貨両替ツール';
+                settingsBtn.style.display = 'block'; // 設定ボタン再表示
+                grid.classList.remove('sort-mode');
+            }
+            
+            renderCurrencies(); // モードを反映して再描画
         }
 
         function switchTab(tab) {
@@ -597,12 +655,20 @@
                 const card = document.createElement('div');
                 card.className = `currency-card ${currency.id === selectedCurrency ? 'selected' : ''}`;
                 card.setAttribute('data-id', currency.id);
-                card.onclick = (e) => handleCardClick(currency.id, e);
                 
-                // 長押しとドラッグのイベント
-                card.addEventListener('touchstart', handleTouchStart, { passive: false }); // passive: falseでpreventDefaultを許可
-                card.addEventListener('touchmove', handleTouchMove, { passive: false });
-                card.addEventListener('touchend', handleTouchEnd);
+                // --- 変更: クリックイベントの登録 ---
+                card.onclick = (e) => {
+                    if (isSortMode) return; // 並べ替え中はクリック無効
+                    handleCardClick(currency.id, e);
+                };
+                
+                // --- 変更: ドラッグイベントの登録 ---
+                if (isSortMode) {
+                    // 並べ替えモード時のみドラッグイベントを登録
+                    card.addEventListener('touchstart', handleTouchStart, { passive: false });
+                    card.addEventListener('touchmove', handleTouchMove, { passive: false });
+                    card.addEventListener('touchend', handleTouchEnd);
+                }
                 
                 const value = convertValue(parseFloat(currentValue) || 0, selectedCurrency, currency.id);
                 const formattedValue = formatNumber(value);
@@ -616,8 +682,9 @@
                     rateText = '基準通貨';
                 }
                 
-                // --- 改善4: タイルレイアウト変更 ---
+                // --- 変更: ドラッグハンドル(☰)の追加 ---
                 card.innerHTML = `
+                    ${isSortMode ? '<div class="drag-handle">☰</div>' : ''}
                     ${currency.id !== 1 ? '<button class="delete-btn" onclick="deleteCurrency(' + currency.id + ', event)">−</button>' : ''}
                     <div class="currency-header">
                         <div class="currency-name">${currency.name}</div>
@@ -633,44 +700,41 @@
             // 追加ボタン
             const addCard = document.createElement('div');
             addCard.className = 'add-card';
-            addCard.onclick = addCurrency;
+            // --- 変更: 並べ替え中は追加不可 ---
+            addCard.onclick = isSortMode ? null : addCurrency;
+            addCard.style.opacity = isSortMode ? 0.3 : 1; 
             addCard.innerHTML = '<div class="add-btn">+</div>';
             grid.appendChild(addCard);
         }
 
+        // --- 変更: handleTouchStart (長押し廃止) ---
         function handleTouchStart(e) {
             if (e.target.classList.contains('delete-btn')) return;
             
-            // --- 改善5: スクロール改善 ---
-            // ドラッグ開始を遅らせ、スクロールを優先する
-            isDragging = false; 
-            startY = e.touches[0].clientY; // 開始Y座標を記録
-
+            isDragging = true;
             const card = e.currentTarget;
-            const id = parseInt(card.getAttribute('data-id'));
+            draggedElement = card;
+            draggedId = parseInt(card.getAttribute('data-id'));
             
-            longPressTimer = setTimeout(() => {
-                isDragging = true;
-                draggedElement = card;
-                draggedId = id;
-                card.classList.add('dragging');
-                navigator.vibrate && navigator.vibrate(50); // 振動フィードバック
-            }, 1000); // --- 改善5: 長押し時間を1秒に変更 ---
+            // ドラッグ中だけ親要素のスクロールを無効化
+            document.querySelector('.currency-scroll').style.overflowY = 'hidden';
+
+            // 即座に（次のフレームで）スタイルを適用
+            requestAnimationFrame(() => {
+                if (isDragging) { // touchendでキャンセルされていなければ
+                    card.classList.add('dragging');
+                    navigator.vibrate && navigator.vibrate(50);
+                }
+            });
         }
 
+        // --- 変更: handleTouchMove (スクロール判定削除) ---
         function handleTouchMove(e) {
-            // --- 改善5: スクロール改善 ---
-            // Y軸に一定以上動いたら、長押しタイマーを解除し、スクロールとみなす
             if (!isDragging) {
-                const deltaY = Math.abs(e.touches[0].clientY - startY);
-                if (deltaY > 10) { // 10px以上動いたらスクロールと判定
-                    clearTimeout(longPressTimer);
-                }
-                return; // ドラッグ開始前はスクロールを妨げない
+                return; // ドラッグ開始前は何もしない
             }
             
-            // ドラッグが開始されたら、スクロールを止める
-            e.preventDefault();
+            e.preventDefault(); // ドラッグ中はスクロールを止める
             
             const touch = e.touches[0];
             const elementAtPoint = document.elementFromPoint(touch.clientX, touch.clientY);
@@ -684,10 +748,14 @@
             }
         }
 
+        // --- 変更: handleTouchEnd (タイマー解除削除、スクロール有効化) ---
         function handleTouchEnd(e) {
-            clearTimeout(longPressTimer);
+            // clearTimeout(longPressTimer); // 削除
             
-            if (!isDragging) return; // ドラッグが開始されていなければ何もしない
+            if (!isDragging) return;
+            
+            // スクロールを再度有効化
+            document.querySelector('.currency-scroll').style.overflowY = 'auto';
             
             const touch = e.changedTouches[0];
             const elementAtPoint = document.elementFromPoint(touch.clientX, touch.clientY);
@@ -703,9 +771,8 @@
                     const [removed] = currencies.splice(draggedIndex, 1);
                     currencies.splice(targetIndex, 0, removed);
                     
-                    // --- 改善1: 永続化 ---
                     saveData();
-                    renderCurrencies();
+                    // renderCurrencies(); // 描画はクリーンアップ後に行う
                 }
             }
             
@@ -716,10 +783,15 @@
             isDragging = false;
             draggedElement = null;
             draggedId = null;
+            
+            // 並べ替えモードは継続したまま再描画
+            if (isSortMode) {
+                renderCurrencies();
+            }
         }
 
         function handleCardClick(id, event) {
-            if (isDragging) return; // ドラッグ操作の最後はクリックとみなさない
+            // isDragging チェックは不要 (isSortMode で制御されるため)
             if (event.target.classList.contains('delete-btn')) {
                 return;
             }
@@ -742,7 +814,6 @@
                 rateFromJPY: 1
             };
             currencies.push(newCurrency);
-            // --- 改善1: 永続化 ---
             saveData();
             renderCurrencies();
             openEditModal(newCurrency.id);
@@ -761,9 +832,8 @@
                 if (selectedCurrency === id) {
                     selectedCurrency = 1;
                 }
-                // --- 改善1: 永続化 ---
                 saveData();
-                renderCurrencies();
+                renderCurrencies(); // 削除後すぐに再描画
             }
         }
 
@@ -815,7 +885,6 @@
             const rate = document.getElementById('edit-rate-from').value;
             currency.rateFromJPY = rate ? parseFloat(rate) : null;
             
-            // --- 改善1: 永続化 ---
             saveData();
             closeEditModal();
             renderCurrencies();
@@ -864,10 +933,10 @@
             return '';
         }
 
+        // --- 電卓ロジック (変更なし) ---
         function inputNumber(num) {
-            // --- 改善3: 電卓の計算継続 ---
             if (lastOperator === '=') {
-                currentValue = num; // 計算結果のあとに数字が押されたら、新しい入力として開始
+                currentValue = num;
                 lastOperator = null;
             } else if (currentValue === "0") {
                 currentValue = num;
@@ -878,15 +947,13 @@
         }
 
         function inputOperator(op) {
-            // --- 改善3: 電卓の計算継続 ---
-            // '=' の直後か、前の演算子がある場合（連続操作）は、まず計算する
             if (lastOperator && lastOperator !== '=' && previousValue !== null) {
                 calculate();
             }
             
             previousValue = parseFloat(currentValue);
             lastOperator = op;
-            currentValue = "0"; // 次の入力を待つ状態にする
+            currentValue = "0";
         }
 
         function calculate() {
@@ -904,7 +971,6 @@
             
             currentValue = result.toString();
             lastOperator = '=';
-            // previousValue = null; // 改善3: 計算継続のため、ここはコメントアウトしない（または inputOperator でケアする）
             updateDisplay();
         }
 
@@ -916,9 +982,7 @@
         }
 
         function backspace() {
-            // --- 改善3: 電卓の計算継続 ---
             if (lastOperator === '=') {
-                // 計算結果が出た直後のBackspaceはClearと同じ動作にする
                 clearCalc();
                 return;
             }
@@ -938,6 +1002,7 @@
             renderCurrencies();
         }
 
+        // --- 設定画面ロジック (変更なし) ---
         function renderSettings() {
             const list = document.getElementById('settings-list');
             list.innerHTML = '';
@@ -1012,7 +1077,6 @@
                 currency.rateFromJPY = rate ? parseFloat(rate) : null;
             });
             
-            // --- 改善1: 永続化 ---
             saveData();
             
             switchTab('calc');
@@ -1020,8 +1084,8 @@
         }
 
         // --- 初期化処理 ---
-        loadData(); // ページ読み込み時にデータをロード
-        renderCurrencies(); // ロードしたデータで表示
+        loadData(); 
+        renderCurrencies();
     </script>
 </body>
 </html>
