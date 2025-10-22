@@ -623,7 +623,7 @@
                 
                 let rateText = '';
                 if (currency.rateFromJPY && currency.id !== 1) {
-                    const toJPY = (1 / currency.rateFromJPY).toFixed(2);
+                    const toJPY = (1 / currency.rateFromJPY).toFixed(4);
                     
                     // --- 修正: レートを小数点以下4桁に固定 ---
                     const rateFromJPYFormatted = currency.rateFromJPY.toFixed(4);
@@ -857,7 +857,7 @@
             } else if (absNum < 1) {
                 formatted = num.toFixed(4);
             } else {
-                formatted = num.toFixed(2);
+                formatted = num.toFixed(4);
             }
             
             const parts = formatted.split('.');
